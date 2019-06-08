@@ -209,26 +209,90 @@ class FieldType {
                     $def['resolve'] = function ($root, $args) use ($field) {
                         if (!is_array($root[$field['name']])) return [];
 
-                        $options = [
-                            'filter' => [
-                                '_id' => [
-                                    '$in' => array_column($root[$field['name']], '_id')
-                                ]
-                            ]
-                        ];
+                        $app = cockpit();
+                        $link = $field['options']['link'];
+                        $graphqlCache = $app->memory->get('graphql-cache', []);
+
+                        if (!isset($graphqlCache[$link])) $graphqlCache[$link] = [];
+
+                        $in = array_column($root[$field['name']], '_id');
+                        $nonCachedIds = array_diff($in, array_keys($graphqlCache[$link]));
+                        $cachedItems = array_values(
+                            array_filter($graphqlCache[$link], function($id) use($in) {
+                                return in_array($id, $in);
+                            }, ARRAY_FILTER_USE_KEY)
+                        );
+
+                        if (empty($nonCachedIds)) return $cachedItems;
+
+                        $options = [ 'filter' => [ '_id' => [ '$in' => $nonCachedIds ] ] ];
 
                         if (isset($args['limit'])) $options['limit'] = $args['limit'];
                         if (isset($args['skip'])) $options['skip'] = $args['skip'];
                         if (isset($args['sort'])) $options['sort'] = $args['sort'];
 
-                        return cockpit('collections')->find($field['options']['link'], $options);
+
+                        $collectionItems = cockpit('collections')->find($link, $options);
+                        $result = array_merge($cachedItems, $collectionItems);
+                        $sort = isset($options['sort']) ? $options['sort'] : [];
+
+                        usort($result, function($a, $b) use($sort) {
+                            if (empty($sort)) return strcmp($a['_id'], $b['_id']);
+
+                            $sortResult = array_map(function($order, $field) use($a, $b) {
+                                while (strpos($field, '.')) {
+                                    $field = explode('.', $field, 2);
+                                    $a = $a[$field[0]];
+                                    $b = $b[$field[0]];
+                                    $field = $field[1];
+                                }
+
+                                switch (true) {
+                                    case is_int($a[$field]):
+                                    case is_bool($a[$field]):
+                                        return ($a[$field] - $b[$field]) * $order;
+                                    case is_string($a[$field]):
+                                        return strcmp($a[$field], $b[$field]) * $order;
+                                    default:
+                                        return 1;
+                                }
+                            }, $sort);
+
+                            foreach ($sortResult as $item) {
+                                if ($item !== 0) return $item;
+                            }
+
+                            return 0;
+                        });
+                        $ids = array_column($result, '_id');
+                        $newCachedItems = array_combine($ids, $result);
+
+                        $graphqlCache[$link] = array_merge(
+                            $graphqlCache[$link],
+                            $newCachedItems
+                        );
+
+                        $app->memory->set('graphql-cache', $graphqlCache);
+
+                        return $result;
                     };
                 } else {
                     $def['type'] = $linkType;
                     $def['resolve'] = function ($root) use ($field) {
-                        return cockpit('collections')->findOne($field['options']['link'], [
-                            '_id' => $root[$field['name']]['_id']
-                        ]);
+                        $app = cockpit();
+                        $link = $field['options']['link'];
+                        $graphqlCache = $app->memory->get('graphql-cache', []);
+                        $id = $root[$field['name']]['_id'];
+
+                        if (isset($graphqlCache[$link][$id])) return $graphqlCache[$link][$id];
+
+                        $collectionItem = cockpit('collections')->findOne($link, ['_id' => $id]);
+
+                        $graphqlCache[$link][$id] = $collectionItem;
+
+                        $app->memory->set('graphql-cache', $graphqlCache);
+
+                        return $collectionItem;
                     };
                 }
 
