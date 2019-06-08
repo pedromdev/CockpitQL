@@ -55,6 +55,9 @@ foreach ($collections as $name => &$meta) {
             $options  = [];
             $filter   = [];
             $populate = $args['populate'];
+            $graphqlCache = $app->memory->get('graphql-cache', []);
+
+            if (!isset($graphqlCache[$name])) $graphqlCache[$name] = [];
 
             if (isset($args['lang']) && $args['lang']) {
                 $filter['lang'] = $args['lang'];
@@ -66,9 +69,14 @@ foreach ($collections as $name => &$meta) {
 
             if (isset($args['_id']) && $args['_id']) {
 
-                return json_encode(cockpit('collections')->findOne($args['name'], [
+                $collectionItem = cockpit('collections')->findOne($args['name'], [
                     '_id' => $args['_id']
-                ], null, $populate, $filter));
+                ], null, $populate, $filter);
+
+                $graphqlCache[$name][$args['_id']] = $collectionItem;
+                $app->memory->set('graphql-cache', $graphqlCache);
+
+                return json_encode($collectionItem);
 
             } else {
 
@@ -85,7 +93,11 @@ foreach ($collections as $name => &$meta) {
                     $options['filter'] = $args['filter'];
                 }
 
-                return cockpit('collections')->find($name, $options);
+                $collectionItems = cockpit('collections')->find($name, $options);
+                $ids = array_column($collectionItems, '_id');
+                $graphqlCache[$name] = array_combine($ids, $collectionItems);
+                $app->memory->set('graphql-cache', $graphqlCache);
+                return $collectionItems;
             }
         }
     ];
