@@ -60,6 +60,8 @@ class Query {
 
         } catch (\Exception $e) {
             return $app->stop(json_encode(['error' => [ 'message' => $e->getMessage() ]]), 400);
+        } finally {
+            $app->memory->set('graphql-cache', []);
         }
 
         return $result;
