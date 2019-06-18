@@ -90,7 +90,7 @@ foreach ($collections as $name => &$meta) {
                 }
 
                 if ($args['filter']) {
-                    $options['filter'] = $args['filter'];
+                    $options['filter'] = parseFilter($args['filter']);
                 }
 
                 $collectionItems = cockpit('collections')->find($name, $options);
