@@ -6,7 +6,6 @@ use GraphQL\Language\AST\BooleanValueNode;
 use GraphQL\Language\AST\FloatValueNode;
 use GraphQL\Language\AST\IntValueNode;
 use GraphQL\Language\AST\ListValueNode;
-use GraphQL\Language\AST\Node;
 use GraphQL\Language\AST\ObjectValueNode;
 use GraphQL\Language\AST\StringValueNode;
 use GraphQL\Type\Definition\ScalarType;
@@ -50,7 +49,13 @@ class JsonType extends ScalarType
                 return $value;
             }
             case ($valueNode instanceof ListValueNode):
-                return array_map([$this, 'parseLiteral'], $valueNode->values);
+                $count = $valueNode->values->count();
+                $parsed = [];
+
+                for ($i = 0; $i < $count; $i++) {
+                    $parsed[] = $this->parseLiteral($valueNode->values->offsetGet($i));
+                }
+                return $parsed;
             default:
                 return null;
         }
